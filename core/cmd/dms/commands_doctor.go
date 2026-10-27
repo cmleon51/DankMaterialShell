@@ -1795,22 +1795,61 @@ func isBundledDefaultFont(family string) bool {
 	return ok
 }
 
-func fontInFcList(name, cacheLower string) bool {
-	target := strings.ToLower(strings.TrimSpace(name))
-	if target == "" {
-		return false
+const fcListQtFormat = "%{family}\t%{style}\t%{foundry}\n"
+
+var qtGenericFamilies = map[string]bool{"sans serif": true, "serif": true, "monospace": true}
+
+func qtFontFamilies() (map[string]bool, error) {
+	output, err := exec.Command("fc-list", "--format", fcListQtFormat).Output()
+	if err != nil {
+		return nil, err
 	}
-	for line := range strings.SplitSeq(cacheLower, "\n") {
-		for fam := range strings.SplitSeq(strings.TrimSpace(line), ",") {
-			if strings.TrimSpace(fam) == target {
-				return true
-			}
-		}
-	}
-	return false
+	return parseQtFontFamilies(string(output)), nil
 }
 
-func checkConfiguredFont(label, family, shellPath, fcCache string, fcListAvailable bool, url string) checkResult {
+// parseQtFontFamilies retrieves, from the provided fcOutput list, a new map in the style of Qt.fontFamilies()
+func parseQtFontFamilies(fcOutput string) map[string]bool {
+	foundries := map[string]map[string]bool{}
+	for line := range strings.SplitSeq(fcOutput, "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 3 || fields[0] == "" {
+			continue
+		}
+		styleCount := len(strings.Split(fields[1], ","))
+		for i, fam := range strings.Split(fields[0], ",") {
+			if i > 0 && i >= styleCount {
+				break
+			}
+			if foundries[fam] == nil {
+				foundries[fam] = map[string]bool{}
+			}
+			foundries[fam][fields[2]] = true
+		}
+	}
+
+	families := make(map[string]bool, len(foundries))
+	for fam, set := range foundries {
+		if len(set) == 1 {
+			families[strings.ToLower(fam)] = true
+			continue
+		}
+		for foundry := range set {
+			name := fam
+			if foundry != "" {
+				name += " [" + foundry + "]"
+			}
+			families[strings.ToLower(name)] = true
+		}
+	}
+	return families
+}
+
+func fontInFcList(name string, families map[string]bool) bool {
+	target := strings.ToLower(strings.TrimSpace(name))
+	return qtGenericFamilies[target] || families[target]
+}
+
+func checkConfiguredFont(label, family, shellPath string, fcFamilies map[string]bool, fcListAvailable bool, url string) checkResult {
 	if bundled := findBundledFontFile(shellPath, family); bundled != "" {
 		details := "Bundled (Qt FontLoader)"
 		if doctorVerbose {
@@ -1845,7 +1884,7 @@ func checkConfiguredFont(label, family, shellPath, fcCache string, fcListAvailab
 		}
 	}
 
-	if fcCache == "" {
+	if len(fcFamilies) == 0 {
 		return checkResult{
 			catFonts, label, statusWarn,
 			fmt.Sprintf("'%s' not found", family),
@@ -1854,7 +1893,7 @@ func checkConfiguredFont(label, family, shellPath, fcCache string, fcListAvailab
 		}
 	}
 
-	if fontInFcList(family, fcCache) {
+	if fontInFcList(family, fcFamilies) {
 		return checkResult{catFonts, label, statusOK, family, "Available via fontconfig", url}
 	}
 
@@ -1900,18 +1939,18 @@ func checkFonts() []checkResult {
 	needFontconfig := !isBundledDefaultFont(fontFamily) || !isBundledDefaultFont(monoFontFamily) || !isBundledDefaultFont(displayFontFamily)
 
 	fcListAvailable := utils.CommandExists("fc-list")
-	fcCache := ""
+	var fcFamilies map[string]bool
 
 	if needFontconfig {
 		if !fcListAvailable {
 			results = append(results, checkResult{catFonts, "Fontconfig Tools", statusWarn, "fc-list not installed", "Cannot verify custom fonts in fontconfig cache.", url})
 		} else {
-			output, err := exec.Command("fc-list", ":", "family").Output()
+			families, err := qtFontFamilies()
 			if err != nil {
 				results = append(results, checkResult{catFonts, "Fontconfig Cache", statusError, "Failed to query font list", "Fontconfig cache query failed. Try running 'fc-cache -fv'.", url})
 			} else {
-				fcCache = strings.ToLower(string(output))
-				if len(strings.TrimSpace(fcCache)) == 0 {
+				fcFamilies = families
+				if len(fcFamilies) == 0 {
 					results = append(results, checkResult{catFonts, "Fontconfig Cache", statusError, "Cache is empty", "No fonts found in fontconfig cache. Try running 'fc-cache -fv'.", url})
 				}
 			}
@@ -1919,9 +1958,9 @@ func checkFonts() []checkResult {
 	}
 
 	results = append(results,
-		checkConfiguredFont("Normal Font", fontFamily, shellPath, fcCache, fcListAvailable, url),
-		checkConfiguredFont("Monospace Font", monoFontFamily, shellPath, fcCache, fcListAvailable, url),
-		checkConfiguredFont("Display Font", displayFontFamily, shellPath, fcCache, fcListAvailable, url),
+		checkConfiguredFont("Normal Font", fontFamily, shellPath, fcFamilies, fcListAvailable, url),
+		checkConfiguredFont("Monospace Font", monoFontFamily, shellPath, fcFamilies, fcListAvailable, url),
+		checkConfiguredFont("Display Font", displayFontFamily, shellPath, fcFamilies, fcListAvailable, url),
 	)
 
 	return results
