@@ -1761,6 +1761,9 @@ var bundledFontRelPaths = map[string][]string{
 	"notable": {
 		"DCommon/assets/fonts/notable/Notable-Regular.ttf",
 	},
+	"gochi hand": {
+		"DCommon/assets/fonts/gochi-hand/GochiHand-Regular.ttf",
+	},
 }
 
 func resolveDoctorShellPath() string {
@@ -1809,7 +1812,7 @@ func qtFontFamilies() (map[string]bool, error) {
 
 // parseQtFontFamilies retrieves, from the provided fcOutput list, a new map in the style of Qt.fontFamilies()
 func parseQtFontFamilies(fcOutput string) map[string]bool {
-	foundries := map[string]map[string]bool{}
+	families := map[string]bool{}
 	for line := range strings.SplitSeq(fcOutput, "\n") {
 		fields := strings.Split(line, "\t")
 		if len(fields) != 3 || fields[0] == "" {
@@ -1820,22 +1823,10 @@ func parseQtFontFamilies(fcOutput string) map[string]bool {
 			if i > 0 && i >= styleCount {
 				break
 			}
-			if foundries[fam] == nil {
-				foundries[fam] = map[string]bool{}
-			}
-			foundries[fam][fields[2]] = true
-		}
-	}
-
-	families := make(map[string]bool, len(foundries))
-	for fam, set := range foundries {
-		families[strings.ToLower(fam)] = true
-		if len(set) == 1 {
-			continue
-		}
-		for foundry := range set {
-			if foundry != "" {
-				families[strings.ToLower(fam+" ["+foundry+"]")] = true
+			families[strings.ToLower(fam)] = true
+			// Qt only lists "Family [Foundry]" for multi-foundry families but resolves it either way
+			if fields[2] != "" {
+				families[strings.ToLower(fam+" ["+fields[2]+"]")] = true
 			}
 		}
 	}

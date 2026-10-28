@@ -3,27 +3,30 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestCheckBundledGoogleSans(t *testing.T) {
-	shellPath := t.TempDir()
-	fontPath := filepath.Join(shellPath, "DCommon", "assets", "fonts", "google-sans-flex", "GoogleSansFlex.ttf")
-	missing := checkConfiguredFont("UI font", "Google Sans Flex", shellPath, nil, false, "")
-	if missing.status != statusWarn {
-		t.Fatalf("missing bundled font status = %v, want %v", missing.status, statusWarn)
-	}
-	if err := os.MkdirAll(filepath.Dir(fontPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(fontPath, []byte("font"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, family := range []string{"Google Sans Flex", " google sans flex "} {
-		result := checkConfiguredFont("UI font", family, shellPath, nil, false, "")
-		if result.status != statusOK {
-			t.Fatalf("bundled font %q status = %v, want %v", family, result.status, statusOK)
-		}
+func TestCheckBundledFonts(t *testing.T) {
+	for family, relPaths := range bundledFontRelPaths {
+		t.Run(family, func(t *testing.T) {
+			shellPath := t.TempDir()
+			if missing := checkConfiguredFont("Font", family, shellPath, nil, false, ""); missing.status != statusWarn {
+				t.Fatalf("missing bundled font status = %v, want %v", missing.status, statusWarn)
+			}
+			fontPath := filepath.Join(shellPath, relPaths[0])
+			if err := os.MkdirAll(filepath.Dir(fontPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(fontPath, []byte("font"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{family, " " + strings.ToUpper(family) + " "} {
+				if result := checkConfiguredFont("Font", name, shellPath, nil, false, ""); result.status != statusOK {
+					t.Fatalf("bundled font %q status = %v, want %v", name, result.status, statusOK)
+				}
+			}
+		})
 	}
 }
 
@@ -42,6 +45,7 @@ func TestQtFontFamilies(t *testing.T) {
 		"RobotoMono Nerd Font":        true,
 		"Nimbus Sans [URW ]":          true,
 		"Plex Lt":                     true,
+		"Plex [IBM]":                  true,
 		"Mono NF":                     true,
 		"Mono NF Light":               false,
 		"Monospace":                   true,
