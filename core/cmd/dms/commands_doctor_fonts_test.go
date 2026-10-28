@@ -39,7 +39,7 @@ func TestQtFontFamilies(t *testing.T) {
 	cases := map[string]bool{
 		"RobotoMono Nerd Font [GOOG]": true,
 		"robotomono nerd font [pyrs]": true,
-		"RobotoMono Nerd Font":        false,
+		"RobotoMono Nerd Font":        true,
 		"Nimbus Sans [URW ]":          true,
 		"Plex Lt":                     true,
 		"Mono NF":                     true,

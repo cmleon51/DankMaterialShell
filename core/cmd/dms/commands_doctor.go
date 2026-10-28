@@ -1829,16 +1829,14 @@ func parseQtFontFamilies(fcOutput string) map[string]bool {
 
 	families := make(map[string]bool, len(foundries))
 	for fam, set := range foundries {
+		families[strings.ToLower(fam)] = true
 		if len(set) == 1 {
-			families[strings.ToLower(fam)] = true
 			continue
 		}
 		for foundry := range set {
-			name := fam
 			if foundry != "" {
-				name += " [" + foundry + "]"
+				families[strings.ToLower(fam+" ["+foundry+"]")] = true
 			}
-			families[strings.ToLower(name)] = true
 		}
 	}
 	return families
