@@ -138,6 +138,7 @@ Singleton {
     property var cards: []
     property var pendingCardSwitch: null
     readonly property var switchableOutputPorts: root.collectSwitchableOutputPorts(root.cards, SessionData.hiddenOutputDeviceNames ?? [])
+    readonly property var outputChoices: root.collectOutputChoices(root.allNodes.filter(n => n.isSink && !n.isStream), root.sinkPorts, root.switchableOutputPorts)
 
     readonly property int sinkMaxVolume: {
         if (freebsdAudio)
@@ -296,14 +297,6 @@ Singleton {
             if (callback)
                 callback();
         }, 0);
-    }
-
-    function getSinkPorts(node) {
-        return sinkPorts[node?.name] ?? null;
-    }
-
-    function sinkHasMultiplePorts(node) {
-        return (sinkPorts[node?.name]?.ports?.length ?? 0) > 1;
     }
 
     function setSinkPort(sinkName, portName, callback) {
@@ -568,12 +561,43 @@ Singleton {
                     cardDescription: card.description,
                     portName: port.name,
                     profile: profile,
+                    availability: port.availability,
                     icon: port.type === "hdmi" ? "tv" : "speaker",
                     title: product ? `${port.description} [${product}]` : port.description
                 });
             }
         }
         return entries;
+    }
+
+    function collectOutputChoices(sinks, sinkPorts, switchable) {
+        const bySink = {};
+        for (const sink of sinks || []) {
+            const info = sinkPorts?.[sink.name];
+            const ports = (info?.ports || []).slice().sort((a, b) => b.priority - a.priority).map(port => ({
+                kind: "port",
+                sinkName: sink.name,
+                portName: port.name,
+                title: port.description,
+                availability: port.availability,
+                active: port.name === info.active
+            }));
+            const profiles = (switchable || []).filter(entry => sinkBelongsToCard(sink, entry.cardName));
+            bySink[sink.name] = ports.concat(profiles.map(entry => Object.assign({
+                kind: "profile",
+                active: false
+            }, entry)));
+        }
+        return bySink;
+    }
+
+    function activateOutputChoice(choice, callback) {
+        if (choice?.kind !== "port") {
+            activateOutputPort(choice, callback);
+            return;
+        }
+        setDefaultSinkByName(choice.sinkName);
+        setSinkPort(choice.sinkName, choice.portName, callback);
     }
 
     function sinkBelongsToCard(node, cardName) {
