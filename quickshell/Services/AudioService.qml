@@ -138,6 +138,7 @@ Singleton {
     property var cards: []
     property var pendingCardSwitch: null
     readonly property var switchableOutputPorts: root.collectSwitchableOutputPorts(root.cards, SessionData.hiddenOutputDeviceNames ?? [])
+    readonly property var disabledOutputCards: root.collectDisabledOutputCards(root.cards, root.allNodes.filter(n => n.isSink && !n.isStream))
     readonly property var outputChoices: root.collectOutputChoices(root.allNodes.filter(n => n.isSink && !n.isStream), root.sinkPorts, root.switchableOutputPorts)
 
     readonly property int sinkMaxVolume: {
@@ -570,6 +571,25 @@ Singleton {
         return entries;
     }
 
+    // Built from cards, not switchableOutputPorts, which drops hidden sinks and input-port profiles
+    function collectDisabledOutputCards(cards, sinks) {
+        const entries = [];
+        for (const card of cards || []) {
+            if ((sinks || []).some(sink => sinkBelongsToCard(sink, card.name)))
+                continue;
+            const candidates = Object.keys(card.profiles).filter(name => name.startsWith("output:") && card.profiles[name].available);
+            if (candidates.length === 0)
+                continue;
+            candidates.sort((a, b) => card.profiles[b].priority - card.profiles[a].priority);
+            entries.push({
+                cardName: card.name,
+                cardDescription: card.description,
+                profile: candidates[0]
+            });
+        }
+        return entries;
+    }
+
     function collectOutputChoices(sinks, sinkPorts, switchable) {
         const bySink = {};
         for (const sink of sinks || []) {
@@ -608,6 +628,29 @@ Singleton {
         if (!cardName.startsWith("alsa_card."))
             return false;
         return (node.name || "").startsWith("alsa_output." + cardName.substring(10) + ".");
+    }
+
+    function cardForSink(node) {
+        return cards.find(card => sinkBelongsToCard(node, card.name)) ?? null;
+    }
+
+    function setCardProfile(cardName, profile, callback) {
+        if (freebsdAudio) {
+            if (callback)
+                callback(false, I18n.tr("Output profile switching is not available with the FreeBSD native audio backend"));
+            return;
+        }
+        if (!cardName || !profile)
+            return;
+        Proc.runCommand("audio-set-card-profile", ["env", "LC_ALL=C", "pactl", "set-card-profile", cardName, profile], (output, exitCode) => {
+            const ok = exitCode === 0;
+            if (callback)
+                callback(ok, ok ? I18n.tr("Output switched", "audio card profile switched successful message") : (output || I18n.tr("Failed to switch output", "audio card profile switch failure message")));
+            Qt.callLater(() => {
+                root.refreshCards();
+                root.refreshSinkPorts();
+            });
+        }, 0);
     }
 
     function activateOutputPort(entry, callback) {
