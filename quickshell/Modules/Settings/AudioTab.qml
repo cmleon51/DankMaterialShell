@@ -28,6 +28,7 @@ Item {
     readonly property var hiddenInputDevices: inputDevices.filter(d => hiddenInputDeviceNames.includes(d.name))
     property bool showHiddenOutputDevices: false
     property bool showDisabledOutputCards: false
+    property var deviceSetKey: null
     property bool showHiddenInputDevices: false
 
     function openRenameDialog(device, type) {
@@ -102,12 +103,18 @@ Item {
         };
 
         inputDevices = inputs.sort(sortInputs);
+
+        // deviceRevision also bumps on app streams, so re-read cards only when the device set changes
+        const key = outputs.concat(inputs).filter(node => !node.isStream).map(node => node.name).sort().join("\n");
+        if (key === deviceSetKey)
+            return;
+        deviceSetKey = key;
+        AudioService.refreshCards();
     }
 
     Component.onCompleted: {
         AudioService.addRef();
         AudioService.queryMonoSetting(() => {});
-        AudioService.refreshCards();
         hiddenOutputDeviceNames = SessionData.hiddenOutputDeviceNames ?? [];
         hiddenInputDeviceNames = SessionData.hiddenInputDeviceNames ?? [];
         updateDeviceList();
